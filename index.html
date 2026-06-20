@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Splitter - IDE Dynamique</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #1e1e2f; color: #fff; }
+        h1 { text-align: center; color: #00d2ff; }
+        .container { display: flex; gap: 20px; max-width: 1200px; margin: auto; }
+        .col { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+        textarea { width: 100%; height: 300px; background: #2a2a40; color: #00ffcc; border: 1px solid #444; border-radius: 8px; padding: 15px; font-family: monospace; resize: vertical; box-sizing: border-box; }
+        button { background: #00d2ff; color: #000; border: none; padding: 12px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #00a8cc; }
+        .btn-analyze { background: #ff0055; color: white; width: 100%; font-size: 18px; margin: 20px 0; }
+        .btn-analyze:hover { background: #cc0044; }
+        
+        #dynamicButtons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .chunk-btn { background: #4caf50; color: white; padding: 15px; border-radius: 8px; flex: 1 1 calc(33% - 10px); text-align: center; font-size: 16px; border: 1px solid #66bb6a; }
+        .chunk-btn:hover { background: #43a047; box-shadow: 0 0 10px rgba(76, 175, 80, 0.5); }
+
+        /* Styles Modale */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: #2a2a40; width: 80%; max-width: 900px; padding: 20px; border-radius: 12px; border: 1px solid #444; display: flex; flex-direction: column; gap: 15px; }
+        .modal-content h2 { margin: 0; color: #ff0055; }
+        .modal-actions { display: flex; gap: 10px; }
+        .modal-actions button.close-btn { background: #555; color: white; }
+    </style>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4b6cb7">
+<link rel="apple-touch-icon" href="icon.png"></head>
+<body>
+
+    <h1>⚡ Vibe Splitter</h1>
+    
+    <div class="container">
+        <div class="col">
+            <label><strong>1. Code Monolithe Refactorisé</strong></label>
+            <textarea id="mainCode" placeholder="Colle ici ton gros code (HTML, JS, ou CSS) contenant les balises d'ancrage..."></textarea>
+        </div>
+        <div class="col">
+            <label><strong>2. Protocole (Script de structure)</strong></label>
+            <textarea id="protocolCode" placeholder='Exemple de protocole JSON:
+[
+  { "nom": "Variables et Config", "tag": "// @SECTION-CONFIG" },
+  { "nom": "Logique Interface", "tag": "// @SECTION-UI" },
+  { "nom": "Appels API", "tag": "// @SECTION-API" }
+]'></textarea>
+        </div>
+    </div>
+
+    <button class="btn-analyze" onclick="analyzeCode()">🔍 Analyser et Éclater le Monolithe</button>
+
+    <h3 style="text-align: center;">Portions détectées :</h3>
+    <div id="dynamicButtons">
+        <!-- Les boutons seront générés ici -->
+    </div>
+
+    <!-- Fenêtre Modale -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-content">
+            <h2 id="modalTitle">Nom de la portion</h2>
+            <textarea id="modalTextarea" style="height: 400px;"></textarea>
+            <div class="modal-actions">
+                <button onclick="copyModal()">📋 Copier</button>
+                <button onclick="pasteModal()">📥 Coller</button>
+                <button style="background: #ff0055; color: white; flex-grow: 1;" onclick="applyToMonolith()">💾 Mettre à jour le Monolithe</button>
+                <button class="close-btn" onclick="closeModal()">❌ Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChunks = [];
+        let currentEditingIndex = -1;
+
+        function analyzeCode() {
+            const code = document.getElementById('mainCode').value;
+            const protocolStr = document.getElementById('protocolCode').value;
+            const container = document.getElementById('dynamicButtons');
+            container.innerHTML = '';
+            currentChunks = [];
+
+            if (!code || !protocolStr) {
+                alert("Veuillez remplir les deux champs !");
+                return;
+            }
+
+            let protocol;
+            try {
+                protocol = JSON.parse(protocolStr);
+            } catch (e) {
+                alert("Le format du protocole doit être un JSON valide ! (Voir l'exemple dans la zone de texte)");
+                return;
+            }
+
+            // Récupérer les positions de chaque tag
+            let positions = [];
+            protocol.forEach(p => {
+                const idx = code.indexOf(p.tag);
+                if (idx !== -1) {
+                    positions.push({ nom: p.nom, tag: p.tag, idx: idx });
+                } else {
+                    console.warn(`Tag introuvable dans le code : ${p.tag}`);
+                }
+            });
+
+            // Trier par ordre d'apparition dans le code
+            positions.sort((a, b) => a.idx - b.idx);
+
+            // Découper le code
+            for (let i = 0; i < positions.length; i++) {
+                let start = positions[i].idx;
+                let end = (i + 1 < positions.length) ? positions[i + 1].idx : code.length;
+                let chunkCode = code.substring(start, end);
+                
+                currentChunks.push({
+                    nom: positions[i].nom,
+                    tag: positions[i].tag,
+                    code: chunkCode
+                });
+
+                // Création du bouton dynamique
+                let btn = document.createElement('button');
+                btn.className = 'chunk-btn';
+                btn.innerText = `📦 ${positions[i].nom}`;
+                btn.onclick = () => openModal(i);
+                container.appendChild(btn);
+            }
+
+            if (currentChunks.length === 0) {
+                alert("Aucune correspondance trouvée entre le protocole et le code.");
+            }
+        }
+
+        function openModal(index) {
+            currentEditingIndex = index;
+            document.getElementById('modalTitle').innerText = currentChunks[index].nom;
+            document.getElementById('modalTextarea').value = currentChunks[index].code;
+            document.getElementById('modalOverlay').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').style.display = 'none';
+            currentEditingIndex = -1;
+        }
+
+        async function copyModal() {
+            const text = document.getElementById('modalTextarea').value;
+            await navigator.clipboard.writeText(text);
+            alert('Portion copiée !');
+        }
+
+        async function pasteModal() {
+            const text = await navigator.clipboard.readText();
+            document.getElementById('modalTextarea').value = text;
+        }
+
+        function applyToMonolith() {
+            if (currentEditingIndex === -1) return;
+            
+            // Met à jour la portion en mémoire
+            const newCode = document.getElementById('modalTextarea').value;
+            currentChunks[currentEditingIndex].code = newCode;
+
+            // Reconstruire le monolithe complet
+            let fullCode = "";
+            currentChunks.forEach(chunk => {
+                fullCode += chunk.code;
+            });
+
+            // Mettre à jour la zone de texte principale
+            document.getElementById('mainCode').value = fullCode;
+            
+            alert('Monolithe mis à jour avec succès !');
+            closeModal();
+        }
+    </script>
+
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));}</script>
+</body>
+</html>
